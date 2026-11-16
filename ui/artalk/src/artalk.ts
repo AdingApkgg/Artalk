@@ -45,15 +45,9 @@ export default class Artalk {
     // Apply local conf first
     ctx.updateConf(conf)
 
-    // Trigger created event
-    ctx.trigger('created')
-
     // Load plugins and remote config, then mount Artalk
     const mountArtalk = async () => {
       await mount(conf, ctx)
-
-      // Trigger mounted event
-      ctx.trigger('mounted')
     }
 
     if (import.meta.env.DEV && import.meta.env.VITEST) {

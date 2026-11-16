@@ -22,12 +22,36 @@ import type { CommentNode } from '@/comment'
  * Artalk Context
  */
 export interface Context extends EventManager<EventPayloadMap>, DependencyContainer<Services> {
+  /** @deprecated Use `getData()` or `inject('data')` instead. */
+  readonly data: Services['data']
+
+  /** @deprecated Use `getUser()` or `inject('user')` instead. */
+  readonly user: Services['user']
+
+  /** @deprecated Use `inject('editor')` instead. */
+  readonly editor: Services['editor']
+
+  /** @deprecated Use `inject('list')` instead. */
+  readonly list: Services['list']
+
+  /** @deprecated Use `inject('layers')` instead. */
+  readonly layerManager: Services['layers']
+
+  /** @deprecated Use `inject('checkers')` instead. */
+  readonly checkerLauncher: Services['checkers']
+
+  /** @deprecated Use `inject('sidebar')` instead. */
+  readonly sidebarLayer: Services['sidebar']
+
+  /** @deprecated Use `inject('editorPlugs')` instead. */
+  readonly editorPlugs: Services['editorPlugs']
+
   /**
    * The root element of Artalk
    *
    * @deprecated Use `getEl()` instead
    */
-  $root: HTMLElement
+  readonly $root: HTMLElement
 
   /** Get the root element */
   getEl(): HTMLElement
@@ -44,7 +68,7 @@ export interface Context extends EventManager<EventPayloadMap>, DependencyContai
    *
    * @deprecated Use `getConf()` and `updateConf()` instead
    */
-  conf: Config
+  readonly conf: Config
 
   /** Get the config */
   getConf(): Config
@@ -87,6 +111,9 @@ export interface Context extends EventManager<EventPayloadMap>, DependencyContai
 
   /** Destroy */
   destroy(): void
+
+  /** Whether `destroy()` has been called */
+  isDestroyed(): boolean
 
   /** Goto the first comment of the list */
   listGotoFirst(): void
@@ -139,3 +166,6 @@ export interface Context extends EventManager<EventPayloadMap>, DependencyContai
   /** Check admin */
   checkAdmin(payload: CheckerPayload): Promise<void>
 }
+
+/** @deprecated Use `Context` instead. */
+export type ContextApi = Context

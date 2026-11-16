@@ -17,6 +17,7 @@ export function imgBody(checker: CheckerCtx) {
       .getApi()
       .captcha.getCaptcha()
       .then((res) => {
+        if (checker.isDisposed?.()) return
         imgEl!.setAttribute('src', res.data.img_data)
       })
       .catch((err) => {
@@ -48,33 +49,34 @@ export function iframeBody(checker: CheckerCtx) {
 
   checker.hideInteractInput()
 
-  // 轮询状态
-  let stop = false // 打断
-  const sleep = (ms: number) =>
-    new Promise((resolve) => {
-      window.setTimeout(() => {
-        resolve(null)
-      }, ms)
-    })
-  ;(async function queryStatus() {
-    await sleep(1000)
-    if (stop) return
-    let isPass = false
+  let stopped = false
+  let timer: number
+  const stop = () => {
+    stopped = true
+    window.clearTimeout(timer)
+  }
+  checker.onDispose?.(stop)
+  async function queryStatus() {
+    if (stopped) return
+    let isPass: boolean
     try {
       const resp = await checker.getApi().captcha.getCaptchaStatus()
       isPass = resp.data.is_pass
     } catch {
       isPass = false
     }
+    if (stopped) return
     if (isPass) {
+      stop()
       checker.triggerSuccess()
     } else {
-      queryStatus()
+      timer = window.setTimeout(queryStatus, 1000)
     }
-  })()
+  }
+  timer = window.setTimeout(queryStatus, 1000)
 
   $closeBtn.onclick = () => {
-    stop = true
+    stop()
     checker.cancel()
   }
 

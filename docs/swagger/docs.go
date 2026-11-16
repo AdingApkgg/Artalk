@@ -1218,7 +1218,12 @@ const docTemplate = `{
         },
         "/notifies": {
             "get": {
-                "description": "Get a list of notifies for user",
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Get unread notifications owned by the authenticated user or anonymous comment credential",
                 "consumes": [
                     "application/json"
                 ],
@@ -1294,7 +1299,12 @@ const docTemplate = `{
         },
         "/notifies/read": {
             "post": {
-                "description": "Mark all notifies as read for user",
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Mark owned notifications as read using a login or anonymous comment credential",
                 "consumes": [
                     "application/json"
                 ],
@@ -1326,6 +1336,24 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/handler.Map"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "msg": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
                         "schema": {
                             "allOf": [
                                 {
@@ -1474,6 +1502,12 @@ const docTemplate = `{
                 "summary": "Get Page List",
                 "operationId": "GetPages",
                 "parameters": [
+                    {
+                        "type": "boolean",
+                        "description": "Only include pages with comments (including pending comments)",
+                        "name": "has_comments",
+                        "in": "query"
+                    },
                     {
                         "type": "integer",
                         "description": "The limit for pagination",
@@ -2412,6 +2446,149 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "Internal Server Error",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/handler.Map"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "msg": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/sso/exchange": {
+            "post": {
+                "description": "Validates a third-party OIDC access token by calling the issuer's /userinfo endpoint, requires a verified email claim, then mints an Artalk session JWT. Use when the surrounding application already runs OIDC and you want Artalk comments to inherit that session without showing Artalk's own login UI.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Exchange an external IdP access token for an Artalk JWT",
+                "operationId": "AuthSSOExchange",
+                "parameters": [
+                    {
+                        "description": "External SSO token",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.ParamsAuthSSOExchange"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ResponseUserLogin"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/handler.Map"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "msg": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/handler.Map"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "msg": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/handler.Map"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "msg": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/handler.Map"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "msg": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/handler.Map"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "msg": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
                         "schema": {
                             "allOf": [
                                 {
@@ -3566,6 +3743,24 @@ const docTemplate = `{
                             "$ref": "#/definitions/handler.ResponseVote"
                         }
                     },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/handler.Map"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "msg": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
@@ -3801,10 +3996,6 @@ const docTemplate = `{
         },
         "common.JSONResult": {
             "type": "object",
-            "required": [
-                "data",
-                "msg"
-            ],
             "properties": {
                 "data": {
                     "description": "Data"
@@ -3829,7 +4020,6 @@ const docTemplate = `{
                 "date",
                 "email_encrypted",
                 "id",
-                "ip_region",
                 "is_allow_reply",
                 "is_collapsed",
                 "is_pending",
@@ -4127,6 +4317,18 @@ const docTemplate = `{
         "handler.Map": {
             "type": "object",
             "additionalProperties": true
+        },
+        "handler.ParamsAuthSSOExchange": {
+            "type": "object",
+            "required": [
+                "token"
+            ],
+            "properties": {
+                "token": {
+                    "description": "External IdP access token (e.g. an Auth0 access token)",
+                    "type": "string"
+                }
+            }
         },
         "handler.ParamsCaptchaVerify": {
             "type": "object",
@@ -4731,7 +4933,6 @@ const docTemplate = `{
                 "date",
                 "email_encrypted",
                 "id",
-                "ip_region",
                 "is_allow_reply",
                 "is_collapsed",
                 "is_pending",
@@ -4854,7 +5055,6 @@ const docTemplate = `{
             "required": [
                 "comments",
                 "count",
-                "page",
                 "roots_count"
             ],
             "properties": {
@@ -4885,7 +5085,6 @@ const docTemplate = `{
                 "date",
                 "email_encrypted",
                 "id",
-                "ip_region",
                 "is_allow_reply",
                 "is_collapsed",
                 "is_pending",
@@ -4987,6 +5186,9 @@ const docTemplate = `{
             "properties": {
                 "anonymous": {
                     "type": "boolean"
+                },
+                "callback_origin": {
+                    "type": "string"
                 },
                 "providers": {
                     "type": "array",

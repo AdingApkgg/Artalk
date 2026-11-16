@@ -6,13 +6,15 @@ import type { ConfigManager, CommentData, Editor as IEditor, EventManager } from
 import type { PluginManager } from '@/plugins/editor-kit'
 
 export interface EditorOptions {
+  /** @internal */
+  renderMarkdown?: (src: string) => string
   getEvents: () => EventManager
   getConf: () => ConfigManager
 }
 
 export class Editor implements IEditor {
   private opts: EditorOptions
-  private $el: HTMLElement
+  private _$el: HTMLElement
   private ui: EditorUI
   private state: EditorStateManager
   private plugins?: PluginManager
@@ -22,7 +24,7 @@ export class Editor implements IEditor {
 
     // init editor ui
     this.ui = render()
-    this.$el = this.ui.$el
+    this._$el = this.ui.$el
 
     // init state manager
     this.state = new EditorStateManager(this)
@@ -33,7 +35,12 @@ export class Editor implements IEditor {
   }
 
   getEl() {
-    return this.$el
+    return this._$el
+  }
+
+  /** @deprecated Use `getEl()` instead. */
+  get $el() {
+    return this.getEl()
   }
 
   getUI() {
@@ -44,12 +51,22 @@ export class Editor implements IEditor {
     return this.plugins
   }
 
+  /** @deprecated Use `getPlugins()` instead. */
+  getPlugs() {
+    return this.getPlugins()
+  }
+
   setPlugins(plugins: PluginManager) {
     this.plugins = plugins
   }
 
   getState() {
     return this.state.get()
+  }
+
+  /** @internal */
+  getStatePayload() {
+    return this.state.getPayload()
   }
 
   getHeaderInputEls() {
@@ -71,7 +88,7 @@ export class Editor implements IEditor {
   }
 
   getContentMarked() {
-    return marked(this.getContentFinal())
+    return (this.opts.renderMarkdown || marked)(this.getContentFinal())
   }
 
   setContent(val: string) {
@@ -122,6 +139,11 @@ export class Editor implements IEditor {
     this.state.switch('reply', { comment, $comment })
   }
 
+  /** @deprecated Use `setReplyComment()` instead. */
+  setReply(comment: CommentData, $comment: HTMLElement, _scroll?: boolean) {
+    this.setReplyComment(comment, $comment)
+  }
+
   setEditComment(comment: CommentData, $comment: HTMLElement) {
     this.state.switch('edit', { comment, $comment })
   }
@@ -139,8 +161,18 @@ export class Editor implements IEditor {
   }
 
   submit() {
+    const events = this.getPlugins()?.getEvents()
+    const { server, site, pageKey } = this.opts.getConf().get()
     const next = () => {
-      this.getPlugins()?.getEvents().trigger('editor-submit')
+      const current = this.opts.getConf().get()
+      if (
+        events !== this.getPlugins()?.getEvents() ||
+        server !== current.server ||
+        site !== current.site ||
+        pageKey !== current.pageKey
+      )
+        return
+      events?.trigger('editor-submit')
       this.opts.getEvents().trigger('editor-submit')
     }
     const beforeSubmit = this.opts.getConf().get().beforeSubmit

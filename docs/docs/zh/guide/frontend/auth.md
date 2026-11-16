@@ -12,11 +12,11 @@ Artalk 默认只需填写昵称和邮箱即可发表评论，无需验证邮箱�
 | Facebook | [查看](https://developers.facebook.com/docs/facebook-login/) | Twitter | [查看](https://developer.twitter.com/en/docs/basics/authentication/overview) | Discord | [查看](https://discord.com/developers/docs/topics/oauth2) |
 | Slack | [查看](https://api.slack.com/authentication/oauth-v2) | Github | [查看](https://developer.github.com/apps/building-oauth-apps/authorizing-oauth-apps/) | Tiktok | [查看](https://developers.tiktok.com/doc/login) |
 | Steam | [查看](https://partner.steamgames.com/doc/webapi_overview/auth) | WeChat | [查看](https://developers.weixin.qq.com/doc/oplatform/Website_App/WeChat_Login/Wechat_Login.html) | Line | [查看](https://developers.line.biz/en/docs/line-login/integrate-line-login/) |
-| GitLab | [查看](https://docs.gitlab.com/ee/api/oauth2.html) | Gitea | [查看](https://docs.gitea.io/en-us/oauth2-provider/) | Mastodon | [查看](https://docs.joinmastodon.org/api/authentication/) |
-| Patreon | [查看](https://docs.patreon.com/#oauth) | Auth0 | [查看](https://auth0.com/docs/connections/social/) | 邮箱密码 | [查看](#邮箱密码登录) |
+| GitLab | [查看](https://docs.gitlab.com/ee/api/oauth2.html) | Mastodon | [查看](https://docs.joinmastodon.org/api/authentication/) | Patreon | [查看](https://docs.patreon.com/#oauth) |
+| 邮箱密码 | [查看](#邮箱密码登录) | | | | |
+| Auth0 | [查看](#auth0) | Okta | [查看](#okta) | Gitea | [查看](#自建-gitea) |
 
 开启社交登录功能仅需在 [控制中心](./sidebar.md#设置) 找到「社交登录」启用该功能，然后填写对应的配置信息即可。也可以通过 [配置文件](../backend/config.md) 或 [环境变量](../env.md#社交登录) 进行配置。
-
 
 ## 邮箱密码登录
 
@@ -68,6 +68,110 @@ Artalk 支持同时启用多种登录方式，用户可以选择任意一种方�
 ![GitHub 授权弹窗](/images/auth/github_login.png)
 
 接入 GitHub 登录可参考文档：[关于创建 GitHub 应用](https://docs.github.com/zh/apps/creating-github-apps/about-creating-github-apps/about-creating-github-apps)，得到 Client ID 和 Client Secret 后，填写到 Artalk 控制中心的设置页面的社交登录中的「GitHub」选项中即可。
+
+## SSO 令牌交换
+
+如果你的站点被嵌入在一个已经通过外部 OIDC 身份提供商（Auth0、Keycloak、Okta 等）完成用户认证的应用中，可以让 Artalk 复用该登录态，而不必显示自己的登录界面。外层应用用它已经持有的 IdP 访问令牌换取一个 Artalk 会话令牌，这样已在父应用登录的用户无需额外点击或弹窗即可发表评论。
+
+该功能**默认关闭**，需手动开启。可通过 [配置文件](../backend/config.md) 或 [环境变量](../env.md#社交登录) 启用，并填写你所用提供商的 OIDC issuer：
+
+```yaml
+auth:
+  enabled: true
+  sso:
+    enabled: true
+    issuer: "https://tenant.auth0.com" # 例如 "tenant.auth0.com" 或 "https://tenant.auth0.com"
+```
+
+启用后，外层应用将 IdP 访问令牌提交到交换接口：
+
+```
+POST /api/v2/sso/exchange
+Content-Type: application/json
+
+{ "token": "<外部 IdP 访问令牌>" }
+```
+
+Artalk 通过调用 issuer 的 `/userinfo` 端点校验该令牌（OIDC 标准做法——由 IdP 在服务端验证并签名响应，因此 Artalk 侧无需处理密钥），读取其中的 `email` 声明。只有同时返回 `email_verified: true` 时，Artalk 才会查找或创建对应用户，并返回与其它登录接口一致的响应结构：
+
+```json
+{
+  "token": "<Artalk 会话令牌>",
+  "user": { "name": "...", "email": "...", "is_admin": false }
+}
+```
+
+前端在 `Artalk.init()` 运行前将其写入 `localStorage["ArtalkUser"]`，组件即把该用户视为已完全登录（不弹窗，管理员用户也不再要求输入管理密码）：
+
+```js
+const res = await fetch('https://comments.example.com/api/v2/sso/exchange', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ token: idpAccessToken }), // 来自你的 IdP 的访问令牌
+})
+const { token, user } = await res.json()
+
+// 在组件挂载前预填 Artalk 登录态
+localStorage.setItem('ArtalkUser', JSON.stringify({ ...user, token }))
+
+Artalk.init({ el: '#Comments', server: 'https://comments.example.com', site: 'Blog' })
+```
+
+当 SSO 未启用时接口返回 `404`，IdP 拒绝令牌或邮箱未验证时返回 `401`，令牌不含邮箱声明时返回 `400`。Artalk 不提供跳过邮箱验证的开关。
+
+::: tip
+
+校验完全依赖 issuer 的 `/userinfo` 拒绝无效或已吊销的令牌，且用户按 `email` 声明匹配。请仅对你信任的 issuer 启用此功能。未经验证的邮箱可能冒充现有用户甚至管理员，因此 Artalk 强制要求 `email_verified: true`。
+
+:::
+
+## Auth0
+
+在 Auth0 创建 Regular Web Application，在 Allowed Callback URLs 中填写 `<Artalk 对外访问源站>/api/v2/auth/auth0/callback`。从应用设置中复制 Domain、Client ID 和 Client Secret。
+
+```yaml
+auth:
+  enabled: true
+  callback: 'https://comments.example.com/api/v2/auth/{provider}/callback'
+  auth0:
+    enabled: true
+    client_id: 'YOUR_CLIENT_ID'
+    client_secret: 'YOUR_CLIENT_SECRET'
+    domain: 'YOUR_TENANT.auth0.com'
+```
+
+将 `https://comments.example.com` 替换为 Artalk 对外访问地址。`domain` 仅填写 Auth0 域名，不包含 `https://` 或路径。在 Auth0 应用中启用所需的登录方式，详见 [Auth0 应用设置](https://auth0.com/docs/get-started/applications/application-settings)。
+
+## Okta
+
+在 Okta 创建 OIDC Web Application，启用 Authorization Code 授权方式，并分配允许登录的用户或用户组。登录回调地址填写 `<Artalk 对外访问源站>/api/v2/auth/okta/callback`。
+
+```yaml
+auth:
+  enabled: true
+  callback: 'https://comments.example.com/api/v2/auth/{provider}/callback'
+  okta:
+    enabled: true
+    client_id: 'YOUR_CLIENT_ID'
+    client_secret: 'YOUR_CLIENT_SECRET'
+    issuer: 'https://example.okta.com'
+```
+
+将 `https://comments.example.com` 替换为 Artalk 对外访问地址。
+
+`issuer` 指定授权服务：组织级服务填写 `https://example.okta.com`，默认自定义服务填写 `https://example.okta.com/oauth2/default`，其他自定义服务填写 `https://example.okta.com/oauth2/<server-id>`。自定义服务需要配置访问策略，详见 [Okta 授权服务文档](https://developer.okta.com/docs/concepts/auth-servers/)。
+
+地址必须使用 HTTPS，不包含 `/v1/authorize`。也可通过 `ATK_AUTH_OKTA_ISSUER` 设置。
+
+Okta 账号与已有 Artalk 账号相互独立，即使昵称和邮箱相同。更换 issuer 会产生独立账号，已有评论仍属于原账号。
+
+## 自建 Gitea
+
+将 `auth.gitea.site_url` 设为 Gitea 的基础 URL，例如 `https://git.example.com/gitea`。留空使用 `https://gitea.com`。支持 HTTP、HTTPS、端口和子路径。
+
+也可设置环境变量 `ATK_AUTH_GITEA_SITE_URL`。在 Gitea 中填写回调地址：`<Artalk 对外访问源站>/api/v2/auth/gitea/callback`。
+
+已有 gitea.com 账号不变。不同自建服务 URL 的账号相互独立，即使昵称和邮箱相同。切换到其他服务或子路径会产生独立账号，已有评论仍属于原账号。
 
 ## 插件开发
 

@@ -1,18 +1,23 @@
 import type PlugKit from './_kit'
 import EditorPlugin from './_plug'
-import * as Utils from '@/lib/utils'
 import $t from '@/i18n'
+import * as Utils from '@/lib/utils'
 
 /** 允许的图片格式 */
 const AllowImgExts = ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'svg', 'webp']
 
 export default class Upload extends EditorPlugin {
+  private disposed = false
   private $imgUploadInput?: HTMLInputElement
 
   constructor(kit: PlugKit) {
     super(kit)
 
     this.kit.useMounted(() => this.init())
+    this.kit.useUnmounted(() => {
+      this.disposed = true
+      this.$imgUploadInput?.remove()
+    })
 
     this.initDragImg()
   }
@@ -25,7 +30,7 @@ export default class Upload extends EditorPlugin {
 
     // TODO: Use btn cannot refresh when mounted event is triggered
     const $btn = this.useBtn(
-      `<i aria-label="${$t('uploadImage')}"><svg fill="currentColor" aria-hidden="true" height="14" viewBox="0 0 14 14" width="14"><path d="m0 1.94444c0-1.074107.870333-1.94444 1.94444-1.94444h10.11116c1.0741 0 1.9444.870333 1.9444 1.94444v10.11116c0 1.0741-.8703 1.9444-1.9444 1.9444h-10.11116c-1.074107 0-1.94444-.8703-1.94444-1.9444zm1.94444-.38888c-.21466 0-.38888.17422-.38888.38888v7.06689l2.33333-2.33333 2.33333 2.33333 3.88888-3.88889 2.3333 2.33334v-5.51134c0-.21466-.1742-.38888-.3888-.38888zm10.49996 8.09977-2.3333-2.33333-3.88888 3.8889-2.33333-2.33334-2.33333 2.33334v.8447c0 .2146.17422.3888.38888.3888h10.11116c.2146 0 .3888-.1742.3888-.3888zm-7.1944-6.54422c-.75133 0-1.36111.60978-1.36111 1.36111 0 .75134.60978 1.36111 1.36111 1.36111s1.36111-.60977 1.36111-1.36111c0-.75133-.60978-1.36111-1.36111-1.36111z"/></svg></i>`,
+      `<i role="img" aria-label="${$t('uploadImage')}"><svg fill="currentColor" aria-hidden="true" height="14" viewBox="0 0 14 14" width="14"><path d="m0 1.94444c0-1.074107.870333-1.94444 1.94444-1.94444h10.11116c1.0741 0 1.9444.870333 1.9444 1.94444v10.11116c0 1.0741-.8703 1.9444-1.9444 1.9444h-10.11116c-1.074107 0-1.94444-.8703-1.94444-1.9444zm1.94444-.38888c-.21466 0-.38888.17422-.38888.38888v7.06689l2.33333-2.33333 2.33333 2.33333 3.88888-3.88889 2.3333 2.33334v-5.51134c0-.21466-.1742-.38888-.3888-.38888zm10.49996 8.09977-2.3333-2.33333-3.88888 3.8889-2.33333-2.33334-2.33333 2.33334v.8447c0 .2146.17422.3888.38888.3888h10.11116c.2146 0 .3888-.1742.3888-.3888zm-7.1944-6.54422c-.75133 0-1.36111.60978-1.36111 1.36111 0 .75134.60978 1.36111 1.36111 1.36111s1.36111-.60977 1.36111-1.36111c0-.75133-.60978-1.36111-1.36111-1.36111z"/></svg></i>`,
     )
     $btn.after(this.$imgUploadInput)
     $btn.onclick = () => {
@@ -96,6 +101,14 @@ export default class Upload extends EditorPlugin {
   }
 
   async uploadImg(file: File) {
+    if (this.disposed) return
+    const identity = () => {
+      const { name, email } = this.kit.useUser().getData()
+      return JSON.stringify([name, email])
+    }
+    const viewer = identity()
+    // Login verification may refresh this viewer's token while retrying upload.
+    const active = () => !this.disposed && viewer === identity()
     const fileExt = /[^.]+$/.exec(file.name)
     if (!fileExt || !AllowImgExts.includes(String(fileExt[0]).toLowerCase())) return
 
@@ -125,9 +138,11 @@ export default class Upload extends EditorPlugin {
         resp = { public_url: await customUploaderFn(file) }
       }
     } catch (err: any) {
+      if (!active()) return
       console.error(err)
       this.kit.useEditor().showNotify(`${$t('uploadFail')}: ${err.message}`, 'e')
     }
+    if (!active()) return
     if (!!resp && resp.public_url) {
       let imgURL = resp.public_url as string
 

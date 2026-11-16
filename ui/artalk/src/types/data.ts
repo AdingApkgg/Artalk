@@ -232,6 +232,8 @@ export interface DataManager {
   fetchComments(params: Partial<ListFetchParams>): void
   loadComments(comments: CommentData[]): void
   clearComments(): void
+  /** @internal */
+  reset?(): void
 
   insertComment(comment: CommentData): void
   updateComment(comment: CommentData): void
@@ -243,6 +245,9 @@ export interface DataManager {
   getPage(): PageData | undefined
   updatePage(pageData: PageData): void
 }
+
+/** @deprecated Use `DataManager` instead. */
+export type DataManagerApi = DataManager
 
 export type NotifyLevel = 'i' | 's' | 'w' | 'e'
 

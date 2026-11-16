@@ -27,7 +27,7 @@ const markedLinkRenderer =
     const html = orgLinkRenderer.call(renderer, args)
     return html.replace(
       /^<a /,
-      `<a target="_blank" ${!isSameOriginLink ? `rel="noreferrer noopener nofollow"` : ''} `,
+      `<a target="_blank" ${!isSameOriginLink ? `rel="noreferrer noopener nofollow ugc"` : ''} `,
     )
   }
 
@@ -53,13 +53,10 @@ const markedCodeRenderer =
   }
 
 const markedImageRenderer =
-  (
-    renderer: any,
-    orgImageRenderer: (args: Tokens.Image) => string,
-    { imgLazyLoad }: RendererOptions,
-  ) =>
+  (renderer: any, orgImageRenderer: (args: Tokens.Image) => string, options: RendererOptions) =>
   (args: Tokens.Image): string => {
     const html = orgImageRenderer.call(renderer, args)
+    const { imgLazyLoad } = options
     if (!imgLazyLoad) return html
     if (imgLazyLoad === 'native' || (imgLazyLoad as any) === true)
       return html.replace(/^<img /, '<img class="lazyload" loading="lazy" ')

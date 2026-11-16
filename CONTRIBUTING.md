@@ -24,9 +24,9 @@ cd Artalk
 
 To develop Artalk, both frontend and backend, install the following tools:
 
-- [Node.js](https://nodejs.org/en/) (>= 20.17.0)
-- [PNPM](https://pnpm.io/) (>= 9.10.0)
-- [Go](https://golang.org/) (>= 1.22)
+- [Node.js](https://nodejs.org/en/) (>= 22.19.0)
+- [PNPM](https://pnpm.io/) (>= 10.33.2)
+- [Go](https://golang.org/) (>= 1.26)
 - [Docker](https://www.docker.com/) (>= 20.10.0) (optional)
 - [Docker Compose](https://docs.docker.com/compose/) (>= 1.29.0) (optional)
 
@@ -35,30 +35,25 @@ To develop Artalk, both frontend and backend, install the following tools:
 The development workflow consists of the following steps:
 
 1. **Set Up Complete Development Instance**:
-
    - Navigate to the Artalk Repo directory.
    - Execute `make dev` to run the backend on port `23366`.
    - Execute `pnpm dev` to run the frontend on port `5173`.
    - Optionally, execute `pnpm dev:sidebar` to run the sidebar frontend on port `23367`.
 
 2. **Access Frontend for Development**:
-
    - Open your browser and go to `http://localhost:5173` to perform your development and testing.
 
 3. **Testing**:
-
    - Run the backend unit tests using `make test`.
    - Run the ui unit tests using `pnpm test`.
    - Run the ui E2E tests using `make test-frontend-e2e`.
 
 4. **Building Frontend Code**:
-
    - When you make changes to the frontend code, build the complete frontend program using `pnpm build:all`.
    - The JavaScript and CSS code will be found in `ui/artalk/dist`.
    - The frontend code is automatically deployed to NPM by GitHub Actions.
 
 5. **Building Backend Code**:
-
    - When you make changes to the backend code, note that the backend program embeds the frontend code.
    - Before building the backend, run `make build-frontend` (which runs `scripts/build-frontend.sh`). This will place the embedded frontend main program and sidebar frontend program in `/public`.
    - Then, build the backend program using `make build`.
@@ -73,6 +68,12 @@ More exploration:
 
 - **Automated CI on GitHub**:
   The automated CI pipeline on GitHub, located in the `.github/workflows` directory, builds the frontend, backend, and Docker images. It publishes Docker images to Docker Hub, handles npm package publishing, and creates GitHub Releases. And also testing the frontend and backend.
+
+### Fedora RPM releases
+
+The release workflow sends the release version to the `@artalk/artalk` COPR project and waits for the build result. COPR uses the scripts on the `dist/fedora` branch and the matching `artalk_ui.tar.gz` release asset. Set `COPR_BUILD_WEBHOOK_URL` to the project's Custom webhook base URL in GitHub Actions secrets.
+
+To build RPMs for an existing release, run **Build and Publish** with its version, select `rpm`, and turn off **Dry run**. This keeps the existing release tag and skips npm and Docker publishing. A dry run does not contact COPR. If a request times out, check COPR's build history before retrying.
 
 The following sections provide more detailed information on the development workflow.
 
@@ -102,13 +103,11 @@ Artalk is a monorepo project, meaning all the source code resides in a single re
 ### Run Backend
 
 1. **Create Configuration File**:
-
    - Copy `./conf/artalk.example.yml` to the root directory.
    - Rename it to `artalk.yml`.
    - Modify the file as needed.
 
 2. **Start Backend Program**:
-
    - Run `make dev` to start the backend on port `23366`.
    - Access it via `http://localhost:23366`.
    - It's recommended to keep the default port for testing.
@@ -124,7 +123,7 @@ If you are using the VSCode, you can use the `F5` key (or RUN button) to start d
    Execute `git fetch --tags` to get the latest git tag information. This tag will be used as the version number of the backend app. Alternatively, specify it using environment variables: `VERSION="v1.0.0"` and `COMMIT_HASH="66128e"`.
 
 2. **Build Frontend**:
-   Run `make build-fronted` to build the frontend, as the backend app embeds the frontend code.
+   Run `make build-frontend` to build the frontend, as the backend app embeds the frontend code.
 
 3. **Build Backend**:
    Execute `make build` to build the backend program.
@@ -132,6 +131,29 @@ If you are using the VSCode, you can use the `F5` key (or RUN button) to start d
 The built binary file will be located in the `./bin` directory.
 
 ## Frontend Development (UI)
+
+### Frontend State
+
+Stored logins are scoped to the server URL. Legacy profile fields still load, but old tokens
+without a server binding require a new login. Guest credentials keep their existing storage keys.
+Use `ctx.getApi()` when starting a request so it uses the current server and user.
+
+Initialize plugins after the final config is loaded. Retrying a failed initialization must not
+register plugins or fire lifecycle events twice. Language settings are shared by the page.
+
+Release listeners, timers, and pending work on `unmounted`. Cleanup must continue if another
+plugin throws. A destroyed widget must not change the page or finish a login.
+
+Keep list loading and cancellation in `ui/artalk/src/services/comments.ts`, using the existing
+API. Check for stale results after `await`. Preserve v2 request fields and plugin events.
+
+Drafts are stored per server, site, and page. The old draft is imported on first use.
+Config updates must keep the current draft and reply or edit target. Navigation must clear the
+old target without deleting its saved draft. Login retries must not submit twice.
+
+Each widget owns its Markdown parser. Use `ctx.getMarked()` after `mounted` to add extensions.
+Config updates keep the parser and its plugin extensions. Comments, quotes, and previews use
+the same parser. Run `pnpm -F artalk test --run` to check these behaviors.
 
 ### Run Frontend
 

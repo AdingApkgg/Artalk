@@ -8,7 +8,6 @@ import type {
   Services,
 } from './types'
 import * as I18n from './i18n'
-import * as marked from './lib/marked'
 import { createInjectionContainer } from './lib/injection'
 import type { CheckerCaptchaPayload, CheckerPayload } from './components/checker'
 
@@ -24,11 +23,24 @@ class Context implements IContext {
     return this._$root
   }
 
+  private _destroyed = false
+
   destroy(): void {
-    this.trigger('unmounted')
-    while (this._$root.firstChild) {
-      this._$root.removeChild(this._$root.firstChild)
+    // The root element may already be reused by a new instance, so a repeated
+    // call must not clear it again.
+    if (this._destroyed) return
+    this._destroyed = true
+
+    try {
+      this.trigger('unmounted')
+    } finally {
+      this.inject('events').dispose?.()
+      this._$root.replaceChildren()
     }
+  }
+
+  isDestroyed(): boolean {
+    return this._destroyed
   }
 
   // -------------------------------------------------------------------
@@ -43,6 +55,46 @@ class Context implements IContext {
   }
   get = this.inject
 
+  /** @deprecated Use `getData()` or `inject('data')` instead. */
+  get data() {
+    return this.inject('data')
+  }
+
+  /** @deprecated Use `getUser()` or `inject('user')` instead. */
+  get user() {
+    return this.inject('user')
+  }
+
+  /** @deprecated Use `inject('editor')` instead. */
+  get editor() {
+    return this.inject('editor')
+  }
+
+  /** @deprecated Use `inject('list')` instead. */
+  get list() {
+    return this.inject('list')
+  }
+
+  /** @deprecated Use `inject('layers')` instead. */
+  get layerManager() {
+    return this.inject('layers')
+  }
+
+  /** @deprecated Use `inject('checkers')` instead. */
+  get checkerLauncher() {
+    return this.inject('checkers')
+  }
+
+  /** @deprecated Use `inject('sidebar')` instead. */
+  get sidebarLayer() {
+    return this.inject('sidebar')
+  }
+
+  /** @deprecated Use `inject('editorPlugs')` instead. */
+  get editorPlugs() {
+    return this.inject('editorPlugs')
+  }
+
   // -------------------------------------------------------------------
   //  Event Manager
   // -------------------------------------------------------------------
@@ -55,6 +107,7 @@ class Context implements IContext {
   }
 
   trigger: IContext['trigger'] = (name, payload) => {
+    if (this._destroyed && name !== 'unmounted') return
     this.inject('events').trigger(name, payload)
   }
 
@@ -66,6 +119,7 @@ class Context implements IContext {
   }
 
   updateConf(conf: ConfigPartial): void {
+    if (this._destroyed) return
     this.inject('config').update(conf)
   }
 
@@ -77,7 +131,7 @@ class Context implements IContext {
   }
 
   getMarked() {
-    return marked.getInstance()
+    return this.inject('markdown').getInstance()
   }
 
   setDarkMode(darkMode: boolean | 'auto'): void {
@@ -87,14 +141,14 @@ class Context implements IContext {
   get conf() {
     return this.getConf()
   }
-  set conf(val) {
-    console.error('Cannot set config directly, please call updateConf()')
+  set conf(_val) {
+    throw new Error('Cannot replace ctx.conf directly; call ctx.updateConf() instead')
   }
   get $root() {
     return this.getEl()
   }
-  set $root(val) {
-    console.error('set $root is prohibited')
+  set $root(_val) {
+    throw new Error('Cannot replace ctx.$root; create a new Artalk instance instead')
   }
 
   // -------------------------------------------------------------------

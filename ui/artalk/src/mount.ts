@@ -2,6 +2,8 @@ import { handleConfFormServer } from './config'
 import { DefaultPlugins } from './plugins'
 import { mergeDeep } from './lib/merge-deep'
 import { MountError } from './plugins/mount-error'
+import { Services } from './services'
+import { setLocale } from './i18n'
 import type { ConfigPartial, ArtalkPlugin, Context } from '@/types'
 
 /**
@@ -14,10 +16,30 @@ export const GlobalPlugins: Set<ArtalkPlugin> = new Set([...DefaultPlugins])
  */
 export const PluginOptions: WeakMap<ArtalkPlugin, any> = new WeakMap()
 
+// Keep registrations across a failed initialization and its retry.
+const instances = new WeakMap<Context, { loaded: Set<ArtalkPlugin>; mounted: boolean }>()
+const scriptLoads = new WeakMap<HTMLScriptElement, Promise<void>>()
+
+/**
+ * Load plugins and the remote config, then mount Artalk.
+ *
+ * Returns early without touching the root element when the instance is
+ * destroyed while the remote config or network plugins are still loading.
+ * The root may already be reused by a new instance at that point.
+ */
 export async function mount(localConf: ConfigPartial, ctx: Context) {
-  const loaded = new Set<ArtalkPlugin>()
+  if (ctx.isDestroyed()) return
+
+  let instance = instances.get(ctx)
+  if (!instance) {
+    instance = { loaded: new Set(), mounted: false }
+    instances.set(ctx, instance)
+  }
+  if (instance.mounted) return
+  const { loaded } = instance
   const loadPlugins = (plugins: Set<ArtalkPlugin>) => {
     plugins.forEach((plugin) => {
+      if (ctx.isDestroyed()) return
       if (typeof plugin !== 'function') return
       if (loaded.has(plugin)) return
       plugin(ctx, PluginOptions.get(plugin))
@@ -25,39 +47,59 @@ export async function mount(localConf: ConfigPartial, ctx: Context) {
     })
   }
 
-  // Load local plugins
-  loadPlugins(GlobalPlugins)
+  // Register service providers required to retrieve the remote config. The
+  // providers are lazy, so feature and external plugins are still initialized
+  // only after the final config has been applied.
+  loadPlugins(Services)
+  setLocale(ctx.getConf().locale)
 
   // Get conf from server
-  const { data } = await ctx
+  // The deprecated useBackendConf flag remains ignored, as in v2.
+  const res = await ctx
     .getApi()
     .conf.conf()
     .catch((err) => {
+      if (ctx.isDestroyed()) return null
       MountError(ctx, { err, onRetry: () => mount(localConf, ctx) })
       throw err
     })
+  if (!res || ctx.isDestroyed() || instance.mounted) return
 
   // Merge remote and local config
   let conf: ConfigPartial = {
     ...localConf,
-    apiVersion: data.version?.version, // server version info
+    apiVersion: res.data.version?.version,
   }
 
-  const remoteConf = handleConfFormServer(data.frontend_conf || {})
+  const remoteConf = handleConfFormServer({ ...res.data.frontend_conf })
   conf = conf.preferRemoteConf ? mergeDeep(conf, remoteConf) : mergeDeep(remoteConf, conf)
 
   // Apply local + remote conf
   ctx.updateConf(conf)
+  setLocale(ctx.getConf().locale)
 
-  // Load remote plugins
-  conf.pluginURLs &&
-    (await loadNetworkPlugins(conf.pluginURLs, ctx.getConf().server)
-      .then((plugins) => {
-        loadPlugins(plugins)
-      })
-      .catch((err) => {
+  // Download remote plugin scripts before initialization so every plugin sees
+  // the same final local + remote config.
+  let networkPlugins = new Set<ArtalkPlugin>()
+  if (conf.pluginURLs) {
+    networkPlugins = await loadNetworkPlugins(conf.pluginURLs, ctx.getConf().server).catch(
+      (err) => {
         console.error('Failed to load plugin', err)
-      }))
+        return new Set<ArtalkPlugin>()
+      },
+    )
+  }
+
+  if (ctx.isDestroyed() || instance.mounted) return
+
+  // Initialize built-in/local plugins first, followed by network plugins.
+  loadPlugins(GlobalPlugins)
+  loadPlugins(networkPlugins)
+  if (ctx.isDestroyed()) return
+
+  instance.mounted = true
+  ctx.trigger('created')
+  if (!ctx.isDestroyed()) ctx.trigger('mounted')
 }
 
 /**
@@ -67,32 +109,33 @@ async function loadNetworkPlugins(scripts: string[], apiBase: string): Promise<S
   const networkPlugins = new Set<ArtalkPlugin>()
   if (!scripts || !Array.isArray(scripts)) return networkPlugins
 
-  const tasks: Promise<void>[] = []
-
-  scripts.forEach((url) => {
+  const tasks = scripts.map((url) => {
     // check url valid
     if (!/^(http|https):\/\//.test(url))
       url = `${apiBase.replace(/\/$/, '')}/${url.replace(/^\//, '')}`
 
-    tasks.push(
-      new Promise<void>((resolve) => {
-        // check if loaded
-        if (document.querySelector(`script[src="${url}"]`)) {
-          resolve()
-          return
-        }
+    const src = new URL(url, document.baseURI).href
+    const existing = Array.from(document.scripts).find((script) => script.src === src)
+    // Share in-flight loads; externally supplied scripts keep their legacy behavior.
+    if (existing) return scriptLoads.get(existing)
 
-        // load script
-        const script = document.createElement('script')
-        script.src = url
-        document.head.appendChild(script)
-        script.onload = () => resolve()
-        script.onerror = (err) => {
-          console.error('[artalk] Failed to load plugin', err)
-          resolve()
-        }
-      }),
-    )
+    const script = document.createElement('script')
+    script.src = src
+    const task = new Promise<void>((resolve) => {
+      const done = () => {
+        script.onload = script.onerror = null
+        resolve()
+      }
+      script.onload = done
+      script.onerror = (err) => {
+        console.error('[artalk] Failed to load plugin', err)
+        script.remove() // Allow a later initialization to retry a failed download.
+        done()
+      }
+    })
+    scriptLoads.set(script, task)
+    document.head.appendChild(script)
+    return task
   })
 
   await Promise.all(tasks)
